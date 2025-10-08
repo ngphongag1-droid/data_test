@@ -66,6 +66,7 @@ def get_ai_analysis(data_for_ai, api_key):
         return response.text
 
     except APIError as e:
+        # Nếu có lỗi 400, đây thường là lỗi cấu hình API hoặc giới hạn sử dụng
         return f"Lỗi gọi Gemini API: Vui lòng kiểm tra Khóa API hoặc giới hạn sử dụng. Chi tiết lỗi: {e}"
     except Exception as e:
         return f"Đã xảy ra lỗi không xác định: {e}"
@@ -77,27 +78,38 @@ def get_chat_response(prompt, context_data, api_key):
         client = genai.Client(api_key=api_key)
         model_name = 'gemini-2.5-flash'
 
-        # 1. Tạo System Instruction với ngữ cảnh dữ liệu tài chính
-        system_instruction = (
+        # 1. Tạo Context Prefix (System Instruction)
+        context_prefix = (
             "Bạn là một chuyên gia phân tích tài chính. Hãy trả lời các câu hỏi của người dùng "
             "dựa trên dữ liệu tài chính đính kèm sau đây (chỉ dùng dữ liệu này để trả lời): \n\n"
             f"--- DỮ LIỆU TÀI CHÍNH CƠ SỞ ---\n{context_data}\n---------------------------\n"
+            "Bây giờ, hãy trả lời câu hỏi sau của người dùng: "
         )
         
-        # 2. Xây dựng nội dung (contents) cho API, bao gồm system instruction và lịch sử chat
-        contents = [
-            {"role": "user", "parts": [{"text": system_instruction}]}, # Dùng System Instruction làm prompt đầu tiên
-        ]
+        contents = []
         
-        # Thêm lịch sử chat
-        for message in st.session_state.messages:
-            # Bỏ qua system instruction trong lịch sử hiển thị
-            if message["role"] != "system": 
-                 contents.append({"role": message["role"], "parts": [{"text": message["content"]}]})
-        
-        # Thêm prompt mới của người dùng
-        contents.append({"role": "user", "parts": [{"text": prompt}]})
+        # 2. Xử lý lịch sử chat: Lấy tất cả tin nhắn trừ tin nhắn user mới nhất (prompt)
+        history_messages = st.session_state.messages[:-1] 
 
+        for message in history_messages:
+            role = None
+            if message["role"] == "user":
+                role = "user"
+            elif message["role"] == "assistant":
+                # Ánh xạ vai trò Streamlit 'assistant' sang vai trò Gemini 'model'
+                role = "model" 
+            
+            # Chỉ thêm vào contents nếu vai trò hợp lệ và không phải là tin nhắn thông báo ban đầu
+            if role and not message["content"].startswith("Vui lòng tải file Excel") and not message["content"].startswith("Dữ liệu đã được tải lên"):
+                 contents.append({"role": role, "parts": [{"text": message["content"]}]})
+        
+        # 3. Thêm prompt mới nhất (user) VÀ GẮN NGỮ CẢNH vào nó
+        # Việc này đảm bảo ngữ cảnh luôn được gửi và tránh lỗi role liên tiếp.
+        final_prompt_with_context = context_prefix + prompt
+
+        contents.append({"role": "user", "parts": [{"text": final_prompt_with_context}]})
+
+        # Bắt đầu gọi API
         response = client.models.generate_content(
             model=model_name,
             contents=contents
@@ -105,7 +117,7 @@ def get_chat_response(prompt, context_data, api_key):
         return response.text
 
     except APIError as e:
-        return f"Lỗi API: Vui lòng kiểm tra Khóa API ({e})"
+        return f"Lỗi API: Vui lòng kiểm tra Khóa API hoặc vai trò (roles) trong lịch sử chat. Chi tiết lỗi: {e}"
     except Exception as e:
         return f"Lỗi không xác định khi chat: {e}"
 
@@ -238,6 +250,7 @@ if uploaded_file is not None:
 
             # Xử lý input mới từ người dùng
             if prompt := st.chat_input("Hỏi Gemini về báo cáo này..."):
+                # Thêm tin nhắn user vào lịch sử (trước khi gọi API)
                 st.session_state.messages.append({"role": "user", "content": prompt})
                 
                 # Hiển thị tin nhắn người dùng
@@ -277,7 +290,7 @@ else:
          st.session_state.messages = [{"role": "assistant", "content": "Vui lòng tải file Excel để bắt đầu phân tích và trò chuyện."}]
     
     st.divider()
-    st.subheader("6. Chatbot Tài chính Tương tác (Hỏi đáp chuyên sâu)")
+    st.subheader("6. Chatbot Agribank Tài chính Tương tác (Hỏi đáp chuyên sâu)")
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
