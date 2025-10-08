@@ -290,7 +290,7 @@ else:
          st.session_state.messages = [{"role": "assistant", "content": "Vui lòng tải file Excel để bắt đầu phân tích và trò chuyện."}]
     
     st.divider()
-    st.subheader("6. Chatbot Agribank Tài chính Tương tác (Hỏi đáp chuyên sâu)")
+    st.subheader("6. Chatbot Agribank Tài chính Tương tác (Hỏi đáp chuyên sâu thêm tí nhé .....)")
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
